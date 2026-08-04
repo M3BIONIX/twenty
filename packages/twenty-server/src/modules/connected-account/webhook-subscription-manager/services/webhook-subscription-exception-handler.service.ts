@@ -3,6 +3,10 @@ import { Injectable } from '@nestjs/common';
 import { type WebhookSubscriptionChannelType } from 'twenty-shared/types';
 
 import { ExceptionHandlerService } from 'src/engine/core-modules/exception-handler/exception-handler.service';
+import {
+  ConnectedAccountRefreshAccessTokenException,
+  ConnectedAccountRefreshAccessTokenExceptionCode,
+} from 'src/engine/metadata-modules/connected-account/exceptions/connected-account-refresh-tokens.exception';
 import { WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS } from 'src/modules/connected-account/webhook-subscription-manager/constants/webhook-subscription-max-attempts.constant';
 import {
   WebhookSubscriptionDriverException,
@@ -34,7 +38,10 @@ export class WebhookSubscriptionExceptionHandlerService {
     channel: WebhookSubscribableChannelReference,
     workspaceId: string,
   ): Promise<WebhookSubscriptionRecoveryAction> {
-    if (exception instanceof WebhookSubscriptionDriverException) {
+    if (
+      exception instanceof WebhookSubscriptionDriverException ||
+      exception instanceof ConnectedAccountRefreshAccessTokenException
+    ) {
       switch (exception.code) {
         case WebhookSubscriptionDriverExceptionCode.NOT_FOUND:
           return await this.handleNotFoundException(
@@ -43,12 +50,8 @@ export class WebhookSubscriptionExceptionHandlerService {
             channel,
             workspaceId,
           );
-        case WebhookSubscriptionDriverExceptionCode.INSUFFICIENT_PERMISSIONS:
-          return await this.handleInsufficientPermissionsException(
-            channelType,
-            channel,
-          );
         case WebhookSubscriptionDriverExceptionCode.TEMPORARY_ERROR:
+        case ConnectedAccountRefreshAccessTokenExceptionCode.TEMPORARY_NETWORK_ERROR:
           return await this.handleTemporaryException(
             exception,
             operation,
@@ -56,6 +59,15 @@ export class WebhookSubscriptionExceptionHandlerService {
             channel,
             workspaceId,
           );
+        case WebhookSubscriptionDriverExceptionCode.INSUFFICIENT_PERMISSIONS:
+        case ConnectedAccountRefreshAccessTokenExceptionCode.REFRESH_TOKEN_NOT_FOUND:
+        case ConnectedAccountRefreshAccessTokenExceptionCode.INVALID_REFRESH_TOKEN:
+          return await this.handleInsufficientPermissionsException(
+            channelType,
+            channel,
+          );
+        case ConnectedAccountRefreshAccessTokenExceptionCode.ACCESS_TOKEN_NOT_FOUND:
+        case ConnectedAccountRefreshAccessTokenExceptionCode.PROVIDER_NOT_SUPPORTED:
         case WebhookSubscriptionDriverExceptionCode.PROVIDER_NOT_CONFIGURED:
         case WebhookSubscriptionDriverExceptionCode.PROVIDER_RESPONSE_INVALID:
         case WebhookSubscriptionDriverExceptionCode.UNSUPPORTED_PROVIDER:
@@ -115,7 +127,7 @@ export class WebhookSubscriptionExceptionHandlerService {
   }
 
   private async handleTemporaryException(
-    exception: WebhookSubscriptionDriverException,
+    exception: { message: string },
     operation: WebhookSubscriptionOperation,
     channelType: WebhookSubscriptionChannelType,
     channel: WebhookSubscribableChannelReference,
