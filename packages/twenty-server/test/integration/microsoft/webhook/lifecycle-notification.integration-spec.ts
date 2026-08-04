@@ -5,6 +5,7 @@ import {
 } from 'twenty-shared/types';
 
 import { CalendarChannelEntity } from 'src/engine/metadata-modules/calendar-channel/entities/calendar-channel.entity';
+import { WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS } from 'src/modules/connected-account/webhook-subscription-manager/constants/webhook-subscription-max-attempts.constant';
 
 import { setupMicrosoftMock } from 'test/integration/microsoft/mocks/setup-microsoft-mock.util';
 import { connectMessagingAccount } from 'test/integration/utils/connect-messaging-account.util';
@@ -49,6 +50,7 @@ describe('Microsoft webhook lifecycle notifications (integration)', () => {
       webhookSubscriptionClientState: CLIENT_STATE,
       webhookSubscriptionStatus: WebhookSubscriptionStatus.ACTIVE,
       webhookSubscriptionExpiresAt: new Date(Date.now() + 3600 * 1000),
+      webhookSubscriptionFailureCount: 0,
     });
   };
 
@@ -142,6 +144,59 @@ describe('Microsoft webhook lifecycle notifications (integration)', () => {
     const channel = await readChannel();
 
     expect(channel.webhookSubscriptionExternalId).toBe(REMOVED_SUBSCRIPTION_ID);
+  }, 60000);
+
+  it('counts a temporary renewal failure and leaves the subscription retryable', async () => {
+    microsoft.failSubscriptionRenewalTemporarily();
+
+    await postLifecycleNotification('reauthorizationRequired').expect(200);
+
+    await waitForAllJobsToFinish();
+
+    const channel = await readChannel();
+
+    expect(channel.webhookSubscriptionStatus).toBe(
+      WebhookSubscriptionStatus.FAILED,
+    );
+    expect(channel.webhookSubscriptionFailureCount).toBe(1);
+  }, 60000);
+
+  it('expires the subscription once renewal has failed the maximum number of times', async () => {
+    microsoft.failSubscriptionRenewalTemporarily();
+
+    await calendarChannelRepository().update(account.calendarChannelId, {
+      webhookSubscriptionFailureCount: WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS,
+    });
+
+    await postLifecycleNotification('reauthorizationRequired').expect(200);
+
+    await waitForAllJobsToFinish();
+
+    const channel = await readChannel();
+
+    expect(channel.webhookSubscriptionStatus).toBe(
+      WebhookSubscriptionStatus.EXPIRED,
+    );
+    expect(channel.webhookSubscriptionFailureCount).toBe(
+      WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS,
+    );
+  }, 60000);
+
+  it('clears the failure count when a renewal succeeds', async () => {
+    await calendarChannelRepository().update(account.calendarChannelId, {
+      webhookSubscriptionFailureCount: WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS - 1,
+    });
+
+    await postLifecycleNotification('reauthorizationRequired').expect(200);
+
+    await waitForAllJobsToFinish();
+
+    const channel = await readChannel();
+
+    expect(channel.webhookSubscriptionStatus).toBe(
+      WebhookSubscriptionStatus.ACTIVE,
+    );
+    expect(channel.webhookSubscriptionFailureCount).toBe(0);
   }, 60000);
 
   it('recreates the subscription when renewal reports the resource is gone', async () => {

@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { type WebhookSubscriptionChannelType } from 'twenty-shared/types';
 
 import { ExceptionHandlerService } from 'src/engine/core-modules/exception-handler/exception-handler.service';
+import { WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS } from 'src/modules/connected-account/webhook-subscription-manager/constants/webhook-subscription-max-attempts.constant';
 import {
   WebhookSubscriptionDriverException,
   WebhookSubscriptionDriverExceptionCode,
@@ -16,7 +17,7 @@ import {
 
 type WebhookSubscribableChannelReference = Pick<
   WebhookSubscribableChannel,
-  'id' | 'webhookSubscriptionExternalId'
+  'id' | 'webhookSubscriptionExternalId' | 'webhookSubscriptionFailureCount'
 >;
 
 @Injectable()
@@ -50,8 +51,10 @@ export class WebhookSubscriptionExceptionHandlerService {
         case WebhookSubscriptionDriverExceptionCode.TEMPORARY_ERROR:
           return await this.handleTemporaryException(
             exception,
+            operation,
             channelType,
             channel,
+            workspaceId,
           );
         case WebhookSubscriptionDriverExceptionCode.PROVIDER_NOT_CONFIGURED:
         case WebhookSubscriptionDriverExceptionCode.PROVIDER_RESPONSE_INVALID:
@@ -113,9 +116,46 @@ export class WebhookSubscriptionExceptionHandlerService {
 
   private async handleTemporaryException(
     exception: WebhookSubscriptionDriverException,
+    operation: WebhookSubscriptionOperation,
     channelType: WebhookSubscriptionChannelType,
     channel: WebhookSubscribableChannelReference,
+    workspaceId: string,
   ): Promise<WebhookSubscriptionRecoveryAction> {
+    if (
+      channel.webhookSubscriptionFailureCount >=
+      WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS
+    ) {
+      await this.webhookSubscriptionStatusService.markAsExpired(
+        channelType,
+        channel.id,
+      );
+
+      this.exceptionHandlerService.captureExceptions(
+        [
+          new Error(
+            `Temporary error occurred ${WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS} times while running ${operation} on the webhook subscription of ${channelType} channel ${channel.id} in workspace ${workspaceId}: ${exception.message}`,
+          ),
+        ],
+        {
+          additionalData: {
+            channelId: channel.id,
+            channelType,
+            operation,
+            webhookSubscriptionFailureCount:
+              channel.webhookSubscriptionFailureCount,
+          },
+          workspace: { id: workspaceId },
+        },
+      );
+
+      return 'NONE';
+    }
+
+    await this.webhookSubscriptionStatusService.incrementFailureCount(
+      channelType,
+      channel.id,
+    );
+
     await this.webhookSubscriptionStatusService.markAsFailed(
       channelType,
       channel.id,
