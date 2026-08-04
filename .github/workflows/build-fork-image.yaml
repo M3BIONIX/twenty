@@ -1,0 +1,90 @@
+name: Build fork image
+
+# Publishes our patched Twenty image to GHCR so Railway can pull it.
+# Upstream builds its images on private infra, so this workflow exists only in
+# the fork. Runs on a GitHub runner because the frontend build needs an 8GB
+# heap (see NODE_OPTIONS in packages/twenty-docker/twenty/Dockerfile), which is
+# more than Railway's builder provides.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/normalize-legacy-timezone-aliases
+
+concurrency:
+  group: build-fork-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/twenty
+
+jobs:
+  test:
+    # Gate the expensive image build on the timezone normalization actually
+    # working, so a broken patch fails in ~5 minutes instead of ~40.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn workspaces focus twenty twenty-server twenty-shared twenty-emails twenty-client-sdk
+
+      - name: Run group-by expression tests
+        run: |
+          npx jest \
+            packages/twenty-server/src/engine/api/common/common-query-runners/utils/__tests__/get-group-by-expression.util.spec.ts \
+            --config=packages/twenty-server/jest.config.mjs
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Free disk space
+        # The runner ships ~14GB free; this build needs more for the yarn
+        # install layers plus the ~2GB final image.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/twenty-docker/twenty/Dockerfile
+          target: twenty
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:tz-fix
+            ${{ env.IMAGE }}:${{ github.sha }}
+          build-args: |
+            APP_VERSION=fork-tz-fix
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "Pushed \`${IMAGE}:tz-fix\`" >> $GITHUB_STEP_SUMMARY
+          echo "Digest tag: \`${IMAGE}:${GITHUB_SHA}\`" >> $GITHUB_STEP_SUMMARY
