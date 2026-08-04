@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { WorkspaceIteratorModule } from 'src/database/commands/command-runners/workspace-iterator.module';
 import { ReconcileRecordPageUniversalIdentifierCommand } from 'src/database/commands/upgrade-version-command/2-28/2-28-workspace-command-1785504604000-reconcile-record-page-universal-identifier.command';
-import { BackfillApplicationRecordPageCommand } from 'src/database/commands/upgrade-version-command/2-28/2-28-workspace-command-1785504605000-backfill-application-record-page.command';
+import { BackfillRecordPageCommand } from 'src/database/commands/upgrade-version-command/2-28/2-28-workspace-command-1785504605000-backfill-record-page.command';
 import { ApplicationModule } from 'src/engine/core-modules/application/application.module';
 import { ViewEntity } from 'src/engine/metadata-modules/view/entities/view.entity';
 import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
@@ -21,7 +21,7 @@ import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace
   ],
   providers: [
     ReconcileRecordPageUniversalIdentifierCommand,
-    BackfillApplicationRecordPageCommand,
+    BackfillRecordPageCommand,
   ],
 })
 export class V2_28_UpgradeVersionCommandModule {}
