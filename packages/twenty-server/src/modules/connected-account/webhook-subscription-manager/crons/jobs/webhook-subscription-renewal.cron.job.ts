@@ -23,16 +23,25 @@ import { MessageQueueService } from 'src/engine/core-modules/message-queue/servi
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { CalendarChannelEntity } from 'src/engine/metadata-modules/calendar-channel/entities/calendar-channel.entity';
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { isThrottled } from 'src/modules/connected-account/utils/is-throttled';
 import { WEBHOOK_SUBSCRIPTION_RENEWAL_BUFFER_MS } from 'src/modules/connected-account/webhook-subscription-manager/constants/webhook-subscription-renewal-buffer-ms.constant';
 import { WEBHOOK_SUBSCRIPTION_RENEWAL_CRON_PATTERN } from 'src/modules/connected-account/webhook-subscription-manager/constants/webhook-subscription-renewal-cron-pattern.constant';
+import { WEBHOOK_SUBSCRIPTION_THROTTLE_DURATION } from 'src/modules/connected-account/webhook-subscription-manager/constants/webhook-subscription-throttle-duration.constant';
 import {
   RenewWebhookSubscriptionJob,
   type RenewWebhookSubscriptionJobData,
 } from 'src/modules/connected-account/webhook-subscription-manager/jobs/renew-webhook-subscription.job';
+import { toIsoStringOrNull } from 'src/utils/date/toIsoStringOrNull';
 
 type WebhookSubscribableChannel = MessageChannelEntity | CalendarChannelEntity;
 
-type StaleChannel = Pick<WebhookSubscribableChannel, 'id' | 'workspaceId'>;
+type StaleChannel = Pick<
+  WebhookSubscribableChannel,
+  | 'id'
+  | 'workspaceId'
+  | 'webhookSubscriptionFailedAt'
+  | 'webhookSubscriptionFailureCount'
+>;
 
 @Processor(MessageQueue.cronQueue)
 export class WebhookSubscriptionRenewalCronJob {
@@ -76,23 +85,35 @@ export class WebhookSubscriptionRenewalCronJob {
       ),
     ]);
 
-    if (messageChannels.length === 0 && calendarChannels.length === 0) {
+    const messageChannelsToRenew = this.excludeThrottledChannels(
+      WebhookSubscriptionChannelType.MESSAGING,
+      messageChannels,
+    );
+    const calendarChannelsToRenew = this.excludeThrottledChannels(
+      WebhookSubscriptionChannelType.CALENDAR,
+      calendarChannels,
+    );
+
+    if (
+      messageChannelsToRenew.length === 0 &&
+      calendarChannelsToRenew.length === 0
+    ) {
       return;
     }
 
     await Promise.all([
       this.enqueueRenewals(
         WebhookSubscriptionChannelType.MESSAGING,
-        messageChannels,
+        messageChannelsToRenew,
       ),
       this.enqueueRenewals(
         WebhookSubscriptionChannelType.CALENDAR,
-        calendarChannels,
+        calendarChannelsToRenew,
       ),
     ]);
 
     this.logger.log(
-      `Enqueued webhook subscription renewals: ${messageChannels.length} messaging, ${calendarChannels.length} calendar`,
+      `Enqueued webhook subscription renewals: ${messageChannelsToRenew.length} messaging, ${calendarChannelsToRenew.length} calendar`,
     );
   }
 
@@ -120,10 +141,40 @@ export class WebhookSubscriptionRenewalCronJob {
           webhookSubscriptionExpiresAt: LessThanOrEqual(renewalThreshold),
         },
       ],
-      select: { id: true, workspaceId: true },
+      select: {
+        id: true,
+        workspaceId: true,
+        webhookSubscriptionFailedAt: true,
+        webhookSubscriptionFailureCount: true,
+      },
     };
 
     return repository.find(options as FindManyOptions<TChannel>);
+  }
+
+  private excludeThrottledChannels(
+    channelType: WebhookSubscriptionChannelType,
+    channels: StaleChannel[],
+  ): StaleChannel[] {
+    const channelsToRenew = channels.filter(
+      (channel) =>
+        !isThrottled(
+          toIsoStringOrNull(channel.webhookSubscriptionFailedAt),
+          channel.webhookSubscriptionFailureCount,
+          null,
+          WEBHOOK_SUBSCRIPTION_THROTTLE_DURATION,
+        ),
+    );
+
+    const throttledCount = channels.length - channelsToRenew.length;
+
+    if (throttledCount > 0) {
+      this.logger.log(
+        `Skipped ${throttledCount} throttled ${channelType} channels`,
+      );
+    }
+
+    return channelsToRenew;
   }
 
   private async enqueueRenewals(
@@ -140,7 +191,6 @@ export class WebhookSubscriptionRenewalCronJob {
         },
         {
           id: `${RenewWebhookSubscriptionJob.name}:${channelType}:${channel.id}`,
-          retryLimit: 3,
         },
       );
     }

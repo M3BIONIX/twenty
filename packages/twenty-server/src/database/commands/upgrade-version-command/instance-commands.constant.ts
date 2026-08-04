@@ -136,6 +136,7 @@ import { AddOpenRecordInToObjectMetadataFastInstanceCommand } from 'src/database
 import { CreateUserSessionCoreTableFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-27/2-27-instance-command-fast-1785518325511-create-user-session-core-table';
 import { CreateApplicationAuthorizationCoreTableFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-27/2-27-instance-command-fast-1785681272278-create-application-authorization-core-table';
 import { AddWebhookSubscriptionFailureCountFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-28/2-28-instance-command-fast-1785840409654-add-webhook-subscription-failure-count';
+import { AddWebhookSubscriptionFailedAtFastInstanceCommand } from 'src/database/commands/upgrade-version-command/2-28/2-28-instance-command-fast-1785845115852-add-webhook-subscription-failed-at';
 
 export const INSTANCE_COMMANDS = [
   AddViewFieldGroupIdIndexOnViewFieldFastInstanceCommand,
@@ -274,4 +275,5 @@ export const INSTANCE_COMMANDS = [
   CreateUserSessionCoreTableFastInstanceCommand,
   CreateApplicationAuthorizationCoreTableFastInstanceCommand,
   AddWebhookSubscriptionFailureCountFastInstanceCommand,
+  AddWebhookSubscriptionFailedAtFastInstanceCommand,
 ];

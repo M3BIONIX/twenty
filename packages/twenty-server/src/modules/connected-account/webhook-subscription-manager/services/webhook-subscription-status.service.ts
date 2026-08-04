@@ -36,6 +36,7 @@ export class WebhookSubscriptionStatusService {
       webhookSubscriptionStatus: WebhookSubscriptionStatus.ACTIVE,
       webhookSubscriptionExpiresAt: result.expiresAt,
       webhookSubscriptionFailureCount: 0,
+      webhookSubscriptionFailedAt: null,
       ...(isDefined(clientState)
         ? { webhookSubscriptionClientState: clientState }
         : {}),
@@ -51,6 +52,7 @@ export class WebhookSubscriptionStatusService {
   ) {
     await this.update(channelType, channelId, {
       webhookSubscriptionStatus: WebhookSubscriptionStatus.FAILED,
+      webhookSubscriptionFailedAt: new Date(),
     });
   }
 

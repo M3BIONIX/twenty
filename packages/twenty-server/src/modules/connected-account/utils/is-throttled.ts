@@ -7,6 +7,7 @@ export const isThrottled = (
   syncStageStartedAt: string | null,
   throttleFailureCount: number,
   throttleRetryAfter?: string | null,
+  throttleDuration: number = MESSAGING_THROTTLE_DURATION,
 ): boolean => {
   const now = new Date();
 
@@ -32,6 +33,7 @@ export const isThrottled = (
   const exponentialBackoffUntil = computeThrottlePauseUntil(
     syncStageStartedAt,
     throttleFailureCount,
+    throttleDuration,
   );
 
   return exponentialBackoffUntil > now;
@@ -40,9 +42,10 @@ export const isThrottled = (
 const computeThrottlePauseUntil = (
   syncStageStartedAt: string,
   throttleFailureCount: number,
+  throttleDuration: number,
 ): Date => {
   return new Date(
     new Date(syncStageStartedAt).getTime() +
-      MESSAGING_THROTTLE_DURATION * Math.pow(2, throttleFailureCount - 1),
+      throttleDuration * Math.pow(2, throttleFailureCount - 1),
   );
 };
