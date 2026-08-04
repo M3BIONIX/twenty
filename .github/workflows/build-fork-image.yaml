@@ -35,11 +35,14 @@ jobs:
       - name: Install dependencies
         run: yarn workspaces focus twenty twenty-server twenty-shared twenty-emails twenty-client-sdk
 
+      - name: Build twenty-shared
+        # twenty-shared/constants resolves to dist/constants.cjs through package
+        # exports, so the new alias map only exists once this has run.
+        run: npx nx build twenty-shared
+
       - name: Run group-by expression tests
-        run: |
-          npx jest \
-            packages/twenty-server/src/engine/api/common/common-query-runners/utils/__tests__/get-group-by-expression.util.spec.ts \
-            --config=packages/twenty-server/jest.config.mjs
+        working-directory: packages/twenty-server
+        run: npx jest src/engine/api/common/common-query-runners/utils/__tests__/get-group-by-expression.util.spec.ts
 
   build:
     needs: test
