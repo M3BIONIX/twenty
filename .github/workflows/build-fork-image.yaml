@@ -16,8 +16,10 @@ concurrency:
   group: build-fork-image-${{ github.ref }}
   cancel-in-progress: true
 
+# GHCR rejects uppercase repository names and the owner here is "M3BIONIX",
+# so the reference has to be lowercased rather than interpolated directly.
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/twenty
+  IMAGE: ghcr.io/m3bionix/twenty
 
 jobs:
   test:
