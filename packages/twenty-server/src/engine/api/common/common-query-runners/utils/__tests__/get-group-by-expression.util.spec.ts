@@ -133,6 +133,22 @@ describe('getGroupByExpression', () => {
       expect(result).toContain("'Asia/Kolkata'");
     });
 
+    // These are aliases too, but base tzdata carries them, so Postgres accepts
+    // them everywhere and rewriting would be gratuitous churn.
+    it.each(['UTC', 'GMT'])(
+      'should not rewrite %s, which base tzdata already provides',
+      (timeZone) => {
+        const groupByField = buildGroupByDateField({ timeZone });
+
+        const result = getGroupByExpression({
+          groupByField,
+          columnNameWithQuotes,
+        });
+
+        expect(result).toContain(`'${timeZone}'`);
+      },
+    );
+
     it('should normalize both interpolations of the timezone in the WEEK expression', () => {
       const groupByField = buildGroupByDateField({
         dateGranularity: ObjectRecordGroupByDateGranularity.WEEK,
