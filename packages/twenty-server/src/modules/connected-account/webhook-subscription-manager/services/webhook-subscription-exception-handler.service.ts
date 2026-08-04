@@ -75,6 +75,7 @@ export class WebhookSubscriptionExceptionHandlerService {
         default:
           return await this.handleUnknownException(
             exception,
+            operation,
             channelType,
             channel,
             workspaceId,
@@ -84,6 +85,7 @@ export class WebhookSubscriptionExceptionHandlerService {
 
     return await this.handleUnknownException(
       exception,
+      operation,
       channelType,
       channel,
       workspaceId,
@@ -127,7 +129,7 @@ export class WebhookSubscriptionExceptionHandlerService {
   }
 
   private async handleTemporaryException(
-    exception: { message: string },
+    exception: unknown,
     operation: WebhookSubscriptionOperation,
     channelType: WebhookSubscriptionChannelType,
     channel: WebhookSubscribableChannelReference,
@@ -137,6 +139,9 @@ export class WebhookSubscriptionExceptionHandlerService {
       channel.webhookSubscriptionFailureCount >=
       WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS
     ) {
+      const message =
+        exception instanceof Error ? exception.message : String(exception);
+
       await this.webhookSubscriptionStatusService.markAsExpired(
         channelType,
         channel.id,
@@ -145,7 +150,7 @@ export class WebhookSubscriptionExceptionHandlerService {
       this.exceptionHandlerService.captureExceptions(
         [
           new Error(
-            `Temporary error occurred ${WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS} times while running ${operation} on the webhook subscription of ${channelType} channel ${channel.id} in workspace ${workspaceId}: ${exception.message}`,
+            `Temporary error occurred ${WEBHOOK_SUBSCRIPTION_MAX_ATTEMPTS} times while running ${operation} on the webhook subscription of ${channelType} channel ${channel.id} in workspace ${workspaceId}: ${message}`,
           ),
         ],
         {
@@ -178,19 +183,21 @@ export class WebhookSubscriptionExceptionHandlerService {
 
   private async handleUnknownException(
     exception: unknown,
+    operation: WebhookSubscriptionOperation,
     channelType: WebhookSubscriptionChannelType,
     channel: WebhookSubscribableChannelReference,
     workspaceId: string,
   ): Promise<WebhookSubscriptionRecoveryAction> {
-    await this.webhookSubscriptionStatusService.markAsFailed(
-      channelType,
-      channel.id,
-    );
-
     this.exceptionHandlerService.captureExceptions([exception], {
       workspace: { id: workspaceId },
     });
 
-    throw exception;
+    return await this.handleTemporaryException(
+      exception,
+      operation,
+      channelType,
+      channel,
+      workspaceId,
+    );
   }
 }
