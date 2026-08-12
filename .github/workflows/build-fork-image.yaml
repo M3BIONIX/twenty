@@ -42,9 +42,12 @@ jobs:
         # exports, so the new alias map only exists once this has run.
         run: npx nx build twenty-shared
 
-      - name: Run group-by expression tests
+      - name: Run fork regression tests
         working-directory: packages/twenty-server
-        run: npx jest src/engine/api/common/common-query-runners/utils/__tests__/get-group-by-expression.util.spec.ts
+        run: |
+          npx jest \
+            src/engine/api/common/common-query-runners/utils/__tests__/get-group-by-expression.util.spec.ts \
+            src/utils/__test__/set-front-static-asset-headers.spec.ts
 
   build:
     needs: test
